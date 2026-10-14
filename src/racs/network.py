@@ -2,7 +2,7 @@
 
 import asyncio
 import ssl
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import dns.asyncresolver
 import dns.exception
@@ -15,6 +15,7 @@ from racs.scope import PolicyError, Scope, public_ip
 class Response:
     status: int
     body: bytes
+    headers: dict[str, str] = field(default_factory=dict)
 
 
 class Resolver:
@@ -47,11 +48,16 @@ class Resolver:
 
 
 class Outbound:
-    def __init__(self, resolver=None):
+    def __init__(self, resolver=None, lab_ca=None):
         self.resolver = resolver or Resolver()
+        self.lab_ca = lab_ca
         self._slots = asyncio.Semaphore(2)
 
     async def addresses(self, scope: Scope) -> list[str]:
+        if scope.host == "racs-lab.localhost":
+            if self.lab_ca and scope.port == 9443:
+                return ["127.0.0.1"]
+            raise PolicyError("Local practice target requires explicit launcher --lab-ca")
         # Revalidate injected resolver results as well as real DNS responses.
         values = await self.resolver.addresses(scope.host)
         if not values or len(values) > 32:
@@ -76,21 +82,31 @@ class Outbound:
             except UnicodeError as exc:
                 raise PolicyError("Proof file must be ASCII text") from exc
 
-    async def _get(self, scope: Scope, address: str, path: str) -> Response:
-        public_ip(address)
+    async def _get(
+        self, scope: Scope, address: str, path: str, *, token=None, body_limit=4096
+    ) -> Response:
+        lab = (
+            self.lab_ca
+            and scope.host == "racs-lab.localhost"
+            and scope.port == 9443
+            and address == "127.0.0.1"
+        )
+        if not lab:
+            public_ip(address)
+        tls = ssl.create_default_context(cafile=str(self.lab_ca) if lab else None)
         # Numeric connection address prevents a second DNS lookup. SNI and certificate
         # validation still use the original hostname; proxies are never consulted.
         reader, writer = await asyncio.open_connection(
             host=address,
-            port=443,
-            ssl=ssl.create_default_context(),
+            port=scope.port,
+            ssl=tls,
             server_hostname=scope.host,
             ssl_handshake_timeout=4,
             limit=16384,
         )
         try:
             peer = writer.get_extra_info("peername")
-            if not peer or public_ip(peer[0]) != address:
+            if not peer or peer[0] != address:
                 raise PolicyError("Connected peer differs from approved destination")
             conn = h11.Connection(h11.CLIENT, max_incomplete_event_size=16384)
             writer.write(
@@ -99,11 +115,12 @@ class Outbound:
                         method="GET",
                         target=path,
                         headers=[
-                            ("Host", scope.host),
-                            ("User-Agent", "RACS/0.1 ownership-verification"),
+                            ("Host", scope.host + (f":{scope.port}" if scope.port != 443 else "")),
+                            ("User-Agent", "RACS/0.2 authorized-security-check"),
                             ("Accept-Encoding", "identity"),
                             ("Connection", "close"),
-                        ],
+                        ]
+                        + ([("Authorization", "Bearer " + token)] if token else []),
                     )
                 )
             )
@@ -111,19 +128,37 @@ class Outbound:
             await writer.drain()
             body = bytearray()
             status = None
+            response_headers = {}
             wire_bytes = 0
             while True:
                 event = conn.next_event()
                 if event is h11.NEED_DATA:
                     data = await reader.read(4096)
                     wire_bytes += len(data)
-                    if wire_bytes > 65536:
+                    if wire_bytes > body_limit + 65536:
                         raise PolicyError("Response exceeds wire limit")
                     conn.receive_data(data)
                 elif isinstance(event, h11.Response):
                     status = event.status_code
-                    if status != 200:
-                        return Response(status, b"")
+                    for k, v in event.headers:
+                        name = k.decode("ascii").lower()
+                        # Never retain cookies/authentication challenges in captured metadata.
+                        if name in (
+                            "content-type",
+                            "content-security-policy",
+                            "x-frame-options",
+                            "x-content-type-options",
+                            "strict-transport-security",
+                            "retry-after",
+                        ):
+                            text = v.decode("latin-1")
+                            response_headers[name] = (
+                                response_headers.get(name, "")
+                                + (", " if name in response_headers else "")
+                                + text
+                            )
+                    if 300 <= status < 400:
+                        return Response(status, b"", response_headers)
                     if any(
                         k == b"content-encoding" and v.lower() != b"identity"
                         for k, v in event.headers
@@ -131,10 +166,10 @@ class Outbound:
                         raise PolicyError("Compressed proof files are not accepted")
                 elif isinstance(event, h11.Data):
                     body.extend(event.data)
-                    if len(body) > 4096:
-                        raise PolicyError("Proof file exceeds 4096 bytes")
+                    if len(body) > body_limit:
+                        raise PolicyError("Response body exceeds configured limit")
                 elif isinstance(event, h11.EndOfMessage):
-                    return Response(status or 0, bytes(body))
+                    return Response(status or 0, bytes(body), response_headers)
                 elif isinstance(event, h11.ConnectionClosed):
                     raise PolicyError("Incomplete response")
         finally:

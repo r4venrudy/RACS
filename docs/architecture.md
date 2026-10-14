@@ -1,96 +1,91 @@
-# Foundation and safety boundary
+# Safety architecture
 
-Step 1 is an ownership service and queue foundation, not a vulnerability scanner.
-The application has no installed checks. Accepted sessions are persisted and end
-as `not_performed`; this never means the target is safe.
+RACS is a single-user local tool. Its random bearer token identifies the operator;
+any local process able to read it has equivalent authority. The launcher binds to
+loopback, disables forwarded headers and takes an OS file lock. The API checks
+Host/Origin, rejects cross-site requests, requires JSON and limits request bodies
+to 8 KiB / five seconds. It provides no public-host deployment mode.
 
-## Trust and scope
+## Ownership and outbound requests
 
-The operator is identified by a SHA-256 digest of a random local bearer token.
-Processes that can read the private runtime token have the operator's privileges.
-This is a single-user local application, not a hosted multi-tenant service.
+A 256-bit challenge is bound to the operator, exact canonical HTTPS origin and
+proof method. Only its SHA-256 digest is stored. Challenges expire in ten minutes,
+allow five attempts and are consumed after success. Per-origin proof attempts
+are spaced by ten seconds. Grants expire in 24 hours; replacing a grant invalidates
+old queued jobs. Revocation cancels jobs and removes pending proofs.
 
-Only ASCII DNS hostnames and HTTPS on port 443 are accepted. International names
-must use IDNA form. Scope is the exact canonical origin and root path `/` only
-for the future first check. The well-known file is a separate fixed verification
-endpoint. No subdomains, arbitrary paths, credentials, query strings, fragments,
-IP literals or redirects are authorized. Shared-hosting users who cannot prove
-control of that origin cannot authorize a subdirectory.
+Production scope is an exact DNS host/HTTPS/443 origin plus explicitly declared
+read-only paths. No implicit subdomains, redirects, credentials-in-URLs, queries
+in paths, traversal, encoded paths or common state-changing route names are accepted.
+GET alone is not considered safe; the owner must confirm the route semantics.
 
-Challenges have 256 random bits, a ten-minute lifetime, and an operator, origin
-and method binding. Only their SHA-256 digest is stored. DNS proofs use
-`_racs-verify.<hostname>`; HTTPS proofs use `/.well-known/racs-verify.txt`.
-Proofs match exactly, allowing surrounding whitespace in HTTPS files. Success
-consumes the challenge and grants 24 hours. Reverification replaces the grant
-generation, so old jobs cannot revive. Revocation deletes grants and challenges
-and cancels active jobs.
+Both proof methods validate every A/AAAA address. HTTPS connects to one approved
+numeric address, preserves the original TLS hostname, validates certificates and
+checks the actual peer. No second resolution, environment proxy, redirect follow,
+cookie jar or retry is used. Non-public/reserved/multicast and common IPv6 mapped,
+transition and translation addresses are denied. DNS uses the system recursive
+resolver with search suffixes disabled. DNSSEC is not implemented. OS routing,
+trust stores and recursive resolvers are trusted infrastructure.
 
-Both proof methods validate every A/AAAA result. DNS uses the machine's configured
-recursive resolver with search suffixes disabled, never target-supplied DNS
-servers. The resolver and system certificate store are trusted infrastructure.
-DNSSEC validation is not implemented. HTTPS connects to a validated numeric IP
-with the original hostname for SNI/certificate verification, then checks the
-connected peer. No second DNS lookup, environment proxy, redirect follow, cookie,
-authentication forwarding or retry is used. DNS errors fail closed. Non-public,
-reserved, multicast, mapped and common IPv6 transition/translation addresses are
-rejected. Custom routing and transparent interception remain outside this trust
-boundary.
+The optional CLI-only local practice allowance recognizes exactly
+`racs-lab.localhost:9443`, pins it to 127.0.0.1 and uses an explicitly supplied CA.
+It requires ordinary HTTPS ownership proof and does not authorize any other private
+host or port. The API cannot enable this exception. Default startup rejects it.
 
-Verification has two concurrent slots, a ten-second network deadline,
-three-second DNS deadlines, a four-second TLS handshake limit, a 4 KiB body cap,
-a 64 KiB wire cap, and a 16 KiB incomplete-header cap. Compression is rejected.
-Five attempts per challenge and one attempt per target per ten seconds are
-allowed. At most 128 pending challenges and 32 active scan sessions are stored.
+## Execution and persistence
 
-## Storage and lifecycle
+SQLite schema version 2 migrates version 1 in place. Parameterized, short immediate
+transactions and a five-second busy timeout serialize queue and grant updates.
+No network request holds a transaction. Unknown schema versions fail closed.
+The persistent queue allows 32 active jobs. The single worker rechecks grants when
+claiming and before/after every request, and polls active requests every 50 ms for
+expiry/revocation/cancellation. Closing the task closes its socket. Restart marks
+running jobs interrupted; old queued jobs remain ownership-gated.
 
-SQLite schema version 1 is initialized transactionally with `user_version`;
-unknown versions fail closed. Short `BEGIN IMMEDIATE` transactions and a
-five-second busy timeout serialize queue checks and claims. Network operations
-never hold database transactions. The launcher takes an OS file lock and starts
-one worker. Do not deploy the app factory through a separate multi-worker server
-or put its runtime database on a network/synchronized drive.
+Each scan allows 180 seconds and 96 requests, with two outbound slots and at least
+one second between successive per-origin responses/requests. Locks aggregate
+across sessions. Requests have a ten-second deadline and 256 KiB body limit;
+proofs use 4 KiB. HTTP parsing and wire limits are bounded; compression is rejected.
+429/5xx latches a persistent target distress stop; three transport failures do too.
+A 429 causes a hard stop, so no request is retried before Retry-After. Recovery must
+be explicitly acknowledged by a verified operator. Browser replay is also bounded.
 
-Transitions are queued to running to not_performed in Step 1, or cancelled by
-the operator, expiry, replaced proof or revocation. Startup marks previously
-running jobs interrupted. Queued jobs survive restarts and are rechecked at claim.
-Completion cannot overwrite cancellation. Models reserve failed/completed for
-future execution.
+Credentials supplied for IDOR stay in a memory-only per-job vault; they are removed
+on execution, cancellation, revocation, expiry or shutdown. They are never saved
+in the scan plan. After restart, credential-dependent checks are not performed
+unless credentials are supplied in a new job. Synthetic object metadata is stored
+in the plan; do not use personal or production data as test markers.
 
-Expired challenges are cleaned on issue. Session history stays local until
-`DELETE /api/data` deletes the operator's sessions, grants and challenges. The
-non-secret per-origin throttle remains to prevent purge/retry abuse. This is
-logical deletion, not secure erasure of database free pages or backups. Response
-evidence and plaintext challenge tokens are not persisted in this stage.
+Each check produces a bounded validated outcome and strict findings. Deterministic
+finding IDs include type, URL and parameter; distinct endpoints remain distinct.
+Results are saved per check, so interrupted sessions retain earlier evidence and
+report missing checks explicitly. Secrets are redacted again before persistence.
+No captured body, cookie, bearer token or plaintext ownership proof is stored.
 
-## Plugins and future execution
+`DELETE /api/data` removes jobs/results/grants/challenges for the local operator.
+Throttle/distress state remains to prevent delete/retry abuse. This is logical
+deletion, not secure erasure of SQLite free pages or external backups.
 
-Plugins are trusted installed Python code with metadata and an async
-`run(context)` contract. There is no remote discovery, code loading or upload.
-`Finding` rejects extra fields and requires severity, confidence, rationale,
-verification status, affected URL/parameter, bounded evidence, reproduction,
-remediation and a sample fix. Confidence labels are not probabilities.
+## Confidence and reports
 
-`TrafficPolicy` is tested scaffolding for future root-only requests: shared
-per-origin locking, two global slots, two-second spacing, ten-second requests,
-authorization checks, no retries, a stop on 429/5xx, and a stop after three network
-failures. It is **not wired to the Step 1 worker**. A hard stop on 429 is stricter
-than waiting for Retry-After: no more traffic is attempted. Stops are in-process.
-Before installing checks, add a complete scan deadline, active socket cancellation
-on revocation, persisted distress stops, bounded finding persistence/deduplication,
-and explicit safe-route controls. GET alone does not prove safety. The current
-worker sends no scan traffic.
+Headers are repeated configuration observations. XSS requires two fresh execution
+markers in dependency-free HTML replay; original CSP is preserved. Chromium uses
+its sandbox, a fresh credential-free context, no service workers/downloads/popups,
+blocked HTTP/WebSocket routes, a dead local proxy and disabled direct WebRTC UDP.
+Additional CSP restricts frames, workers and connections. Resource dependencies
+and script errors invalidate the proof. This deliberately sacrifices coverage for
+confidence; it is not full equivalence to arbitrary live application execution.
 
-## API and later reports
+SQL results require stable JSON arrays and independently repeated AND-only
+true/false controls. Even a repeatable differential is labelled an indicator:
+HTTP cannot establish the database implementation. IDOR needs independently
+verified identities, explicit forbidden access expectations, an exact known object
+and a separate private marker never sent in the request. There is no enumeration.
 
-The launcher binds only 127.0.0.1. Mutations require a bearer token and JSON;
-Host/Origin are allowlisted, cross-site requests rejected and CORS disabled.
-Bodies are capped at 8 KiB with a five-second deadline. Homepage/health expose
-only public status. Tokens never appear in URLs, cookies, frontend HTML or logs.
-Proxy forwarding headers are disabled. Keep the runtime directory private using
-normal user-profile filesystem permissions.
+HTML is escaped, UI rendering uses textContent, and PDF generation uses only
+ReportLab text primitives. Reports cannot load local files or remote resources.
+Tokens are not placed in URLs or persisted in browser storage. Exported documents
+contain scope, outcome limitations, confidence, evidence, reproduction and fixes.
 
-HTML/PDF reports and the category UI are later stages. Escape all findings in
-HTML; prohibit PDF local-file and remote-resource fetching. Add evidence redaction
-and retention before storing target responses. Reflection, errors, HTTP status or
-missing headers alone must not be described as exploitable vulnerabilities.
+Plugins run as trusted installed code; Python is not a sandbox. No upload or
+remote discovery is allowed. Core policy is the supported path for all traffic.

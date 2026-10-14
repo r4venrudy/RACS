@@ -178,13 +178,17 @@ def test_api_flow(store, method):
     outbound = AsyncMock()
     client = TestClient(create_app(store, token, outbound), base_url="http://127.0.0.1:8765")
     headers = {"Authorization": f"Bearer {token}"}
-    assert client.get("/health").json()["checks_installed"] == 0
+    assert client.get("/health").json()["checks_installed"] == 4
     assert (
         client.post("/api/challenges", json={"target": "example.com", "method": method}).status_code
         == 401
     )
     assert (
-        client.post("/api/scans", headers=headers, json={"target": "example.com"}).status_code
+        client.post(
+            "/api/scans",
+            headers=headers,
+            json={"target": "example.com", "plan": {"read_only_confirmed": True}},
+        ).status_code
         == 400
     )
     r = client.post(
@@ -197,7 +201,11 @@ def test_api_flow(store, method):
         client.post(f"/api/challenges/{c['id']}/verify", headers=headers, json={}).status_code
         == 200
     )
-    job = client.post("/api/scans", headers=headers, json={"target": "example.com"}).json()
+    job = client.post(
+        "/api/scans",
+        headers=headers,
+        json={"target": "example.com", "plan": {"read_only_confirmed": True}},
+    ).json()
     assert job["owner"] == hashlib.sha256(token.encode()).hexdigest()
     assert (
         client.post(f"/api/scans/{job['id']}/cancel", headers=headers, json={}).json()["status"]
@@ -205,12 +213,18 @@ def test_api_flow(store, method):
     )
     assert (
         client.post(
-            "/api/targets/revoke", headers=headers, json={"target": "example.com"}
+            "/api/targets/revoke",
+            headers=headers,
+            json={"target": "example.com", "plan": {"read_only_confirmed": True}},
         ).status_code
         == 200
     )
     assert (
-        client.post("/api/scans", headers=headers, json={"target": "example.com"}).status_code
+        client.post(
+            "/api/scans",
+            headers=headers,
+            json={"target": "example.com", "plan": {"read_only_confirmed": True}},
+        ).status_code
         == 400
     )
     assert client.delete("/api/data", headers=headers).status_code == 200
@@ -228,4 +242,4 @@ def test_api_local_security(store):
         ).status_code
         == 413
     )
-    assert client.get("/").headers["content-security-policy"].startswith("default-src 'none'")
+    assert client.get("/").headers["content-security-policy"].startswith("default-src 'self'")

@@ -9,6 +9,7 @@ from pathlib import Path
 import uvicorn
 
 from racs.app import create_app
+from racs.network import Outbound
 from racs.storage import Store
 
 
@@ -36,6 +37,11 @@ def main():
     parser.add_argument("--port", type=int, default=8765)
     default_root = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local" / "share")) / "RACS"
     parser.add_argument("--data-dir", type=Path, default=default_root)
+    parser.add_argument(
+        "--lab-ca",
+        type=Path,
+        help="Explicitly permit ONLY racs-lab.localhost:9443 pinned to loopback and this CA, with normal ownership proof",
+    )
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535:
         parser.error("port must be between 1024 and 65535")
@@ -48,10 +54,10 @@ def main():
                 stream.write(secrets.token_urlsafe(32))
         token = token_path.read_text().strip()
         store = Store(args.data_dir / "racs.sqlite3")
-        print(f"RACS Step 1: http://127.0.0.1:{args.port}")
+        print(f"RACS: http://127.0.0.1:{args.port}")
         print(f"Local API token file: {token_path} (keep private)")
         uvicorn.run(
-            create_app(store, token, port=args.port),
+            create_app(store, token, Outbound(lab_ca=args.lab_ca), port=args.port),
             host="127.0.0.1",
             port=args.port,
             workers=1,

@@ -1,84 +1,97 @@
-# RACS — Rudy Advanced Cybersecurity Scanner
+# RACS - Rudy Advanced Cybersecurity Scanner
 
-**Authorized use only. You are responsible for testing only systems you own or
-are explicitly authorized to test. RACS requires proof of control before a scan
-can be queued. Proof does not replace legal authorization. RACS finds, reports,
-and advises; it never modifies a target.**
+**Authorized use only. Test only systems you own or are explicitly authorized to
+assess. Proof of control is mandatory and does not replace legal permission.
+Every scan needs a declared read-only scope. RACS never modifies the target.**
 
-RACS is a modular Python/FastAPI security tooling project with SQLite storage.
-This release implements **Step 1: the ownership and repository foundation**.
-No vulnerability checks, report generator, or category workflow are installed yet.
+RACS is a local Python/FastAPI application with SQLite history, four Web checks,
+a plain HTML/CSS/JavaScript interface and detailed HTML/PDF reports. Network and
+Cloud categories are visible as coming soon.
 
-## What works
+## Evidence before findings
 
-- Expiring DNS TXT or HTTPS-file ownership challenges with single-use proofs.
-- Exact-host HTTPS scope, bounded grants, revocation, and requester isolation.
-- Public-address validation, pinned TLS connections, no proxies or redirects.
-- Authenticated local API, persistent bounded scan sessions, cancellation and
-  restart recovery. Jobs end as `not_performed` because there are no checks yet.
-- Strict finding schema and an async plugin contract for later modules.
+| Check | Confirmation rule | Meaning of a positive |
+| --- | --- | --- |
+| Security headers | Missing on two successful HTML responses; respects CSP framing alternatives | High-confidence configuration observation, not proof of exploitation |
+| Reflected XSS | Two fresh harmless markers execute in isolated, dependency-free captured HTML with the original enforcing CSP preserved | High-confidence execution in the tested reflected HTML context |
+| SQL injection indicators | Stable nonempty JSON result array, benign invalid control, two true/false AND predicate pairs, repeated untouched baselines | High-confidence boolean differential; SQL as the root cause still needs code review |
+| Object access control | Two distinct verified test identities; known private object and independent protected marker disclosed twice to the identity declared forbidden | High-confidence disclosure for that exact test object and policy |
+
+Missing inputs, unstable responses and unsupported contexts are marked
+`not_performed` or `inconclusive`. A completed job is not a clean bill of health.
+No crawling, object enumeration, OR/UNION expansion, stacked SQL, time delays,
+credential guessing, persistence or target writes are performed.
 
 ## Run locally
 
-Requires Python 3.12 or newer. From this directory on Windows:
+Python 3.12+ is required. On Windows:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m playwright install chromium
 .\.venv\Scripts\racs.exe
 ```
 
-On macOS/Linux, use `.venv/bin/python` and `.venv/bin/racs`. The service binds to
-`http://127.0.0.1:8765`; there is intentionally no public-interface option.
-Only one process may use a runtime directory. The default Windows runtime folder
-is `%LOCALAPPDATA%\RACS`; on other systems it is `~/.local/share/RACS`.
-Keep its `api-token` file private. The launcher prints its path, never its value.
-Use `--data-dir` to select another **local, private** runtime directory.
+On macOS/Linux use `.venv/bin/python` and `.venv/bin/racs`. The launcher binds only
+`127.0.0.1:8765` and takes a single-process runtime lock. Its private `api-token`
+file is in `%LOCALAPPDATA%\RACS` on Windows or `~/.local/share/RACS` elsewhere.
+Paste that token into the local UI; it stays only in page memory. Keep the runtime
+folder private and outside network/synchronized folders. Do not expose this app
+as a public or multi-user service.
 
-The API expects `Authorization: Bearer <contents of api-token>` and
-`Content-Type: application/json`. Do not place the token in a URL or commit it.
+1. Enter an exact HTTPS origin and request a DNS TXT or HTTPS-file challenge.
+2. Publish the returned token yourself, then check the proof. Challenges expire
+   after ten minutes; grants expire after 24 hours and can be revoked immediately.
+3. Select checks and declare exact read-only paths/parameters. SQL probing needs
+   the known query context (`string`, `like`, or `numeric`) and a nonempty JSON
+   result-array baseline. Access-control testing needs two synthetic test accounts,
+   an identity endpoint returning top-level `id`, and a known private test marker.
+4. Run the scan and review per-check coverage, confidence rationale, evidence,
+   reproduction instructions, remediation and sample fix code. Export HTML/PDF.
 
-| Request | Purpose |
-| --- | --- |
-| `GET /health` | Stage and health status; no authentication needed |
-| `POST /api/challenges` | Body: `{"target":"https://your-domain.tld","method":"dns"}` (or `https`) |
-| `POST /api/challenges/{id}/verify` | Body: `{}`; check the issued proof at its returned location |
-| `POST /api/scans` | Body: `{"target":"https://your-domain.tld"}`; requires a current grant |
-| `GET /api/scans/{id}` | Read the persistent session |
-| `POST /api/scans/{id}/cancel` | Body: `{}`; cancel a queued/running session |
-| `POST /api/targets/revoke` | Body: `{"target":"https://your-domain.tld"}`; revoke and cancel |
-| `DELETE /api/data` | Delete this operator's sessions, grants and challenges |
+Production targets remain exact-host HTTPS on port 443. Subdomains need separate
+proof. Redirects, IP literals and private/reserved destinations are rejected.
+Browser XSS replay never directly browses the target and carries no credentials.
+Pages with resource dependencies or replay errors are inconclusive; DOM-only,
+stored, authenticated and resource-dependent XSS are outside current coverage.
+IDOR currently supports bearer-token principals and top-level JSON fields.
 
-Publish the returned challenge token yourself as a TXT record at the returned
-name, or as the content of the HTTPS file. RACS never writes to your target.
-Challenges expire after ten minutes; grants after 24 hours. Scope currently permits
-only the exact HTTPS host, port 443 and root path. Subdomains need separate proof.
-HTTPS verification rejects every redirect, including redirects to `www`.
-
-## Development
+## Test and practice
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q --run-practice
 .\.venv\Scripts\python.exe -m ruff check src tests
 ```
 
-Tests use synthetic proofs and mocked DNS/TLS streams and block external network
-connections. `requirements-dev.lock` records the exact validated environment;
-install it before the editable package for a reproducible development setup.
-The [architecture notes](docs/architecture.md) distinguish implemented protections
-from future scan-engine and reporting requirements. This is local development
-software; it is not ready for a public or multi-user service.
+The second command starts an isolated TLS practice target on loopback port 9443
+and runs vulnerable/safe controls through the real transport and Chromium. Keep
+that port free. The target deliberately contains flaws and must never be deployed.
+Its certificate and runtime files are temporary. CI runs the practice tests too.
+See [validation](docs/validation.md) for the exact coverage and additional local
+OWASP Juice Shop validation. The dependency lock records the tested environment.
 
-## Next stages
+For manual practice, start `tests/practice/server.py --root <private-directory>`
+with the project Python, then launch RACS with `--lab-ca <private-directory>/lab-cert.pem`.
+This explicit launcher option permits **only** `https://racs-lab.localhost:9443`,
+pinned to `127.0.0.1` with the provided CA. It does not disable ownership proof,
+TLS checks or public-target SSRF defenses. Publish the proof token yourself in
+`<private-directory>/proof.txt`. The ordinary launcher has no local-target exception.
 
-1. **Implemented:** foundation, ownership verification, repository hygiene.
-2. Missing-security-header check.
-3. HTML and PDF reports.
-4. Plain HTML/CSS/JavaScript category UI; Network and Cloud marked coming soon.
-5. Reflected XSS, SQL-injection indicators, then owner-scoped access-control checks.
+## Architecture and API
 
-Each stage is implemented and tested separately. Indicators must remain distinct
-from verified vulnerabilities, and confidence must explain the evidence.
+See [architecture and safety boundaries](docs/architecture.md). API actions use
+`Authorization: Bearer <local token>` and JSON. Main endpoints: `/api/challenges`,
+`/api/challenges/{id}/verify`, `/api/scans`, `/api/scans/{id}/report`,
+`/api/scans/{id}/report.html`, `/api/scans/{id}/report.pdf`,
+`/api/scans/{id}/cancel`, `/api/targets/revoke` and `/api/targets/recover`.
+Authenticated `DELETE /api/data` removes the operator's grants, jobs and results.
+
+Plugins are trusted installed Python code with metadata and an async contract.
+New packages may register a factory in the `racs.checks` entry-point group without
+changing the engine. There is no plugin upload or remote code loader. Built-ins
+are separate modules under `src/racs/checks`.
 
 ## License
 

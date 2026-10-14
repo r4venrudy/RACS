@@ -1,6 +1,7 @@
 """SQLite transactions are the authority for grants and scan transitions."""
 
 import hashlib
+import json
 import secrets
 import sqlite3
 import time
@@ -22,7 +23,7 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.transaction() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise RuntimeError("Unsupported database schema version")
             for statement in (
                 """CREATE TABLE IF NOT EXISTS challenges (
@@ -40,7 +41,15 @@ class Store:
                     origin TEXT PRIMARY KEY, next_at REAL NOT NULL)""",
             ):
                 db.execute(statement)
-            db.execute("PRAGMA user_version=1")
+            if version < 2:
+                db.execute("ALTER TABLE scans ADD COLUMN plan TEXT NOT NULL DEFAULT '{}'")
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS outcomes (scan_id TEXT NOT NULL, check_name TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(scan_id,check_name), FOREIGN KEY(scan_id) REFERENCES scans(id) ON DELETE CASCADE)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS distress (origin TEXT PRIMARY KEY, reason TEXT NOT NULL, created_at REAL NOT NULL)"
+            )
+            db.execute("PRAGMA user_version=2")
 
     @contextmanager
     def transaction(self):
@@ -132,7 +141,7 @@ class Store:
             return {
                 "origin": row["origin"],
                 "expires_at": expiry,
-                "scope": "exact HTTPS origin, port 443, root path",
+                "scope": "exact HTTPS origin; scanning limited to declared read-only paths",
             }
 
     def revoke(self, owner: str, scope: Scope):
@@ -144,7 +153,7 @@ class Store:
                 (self.clock(), owner, scope.origin),
             )
 
-    def enqueue(self, owner: str, scope: Scope) -> dict:
+    def enqueue(self, owner: str, scope: Scope, plan=None) -> dict:
         with self.transaction() as db:
             grant = db.execute(
                 "SELECT * FROM grants WHERE owner=? AND origin=? AND expires>?",
@@ -162,7 +171,7 @@ class Store:
             scan_id = uuid.uuid4().hex
             now = self.clock()
             db.execute(
-                "INSERT INTO scans VALUES(?,?,?,?,?,?,?,?)",
+                "INSERT INTO scans(id,owner,origin,grant_id,status,created_at,updated_at,detail,plan) VALUES(?,?,?,?,?,?,?,?,?)",
                 (
                     scan_id,
                     owner,
@@ -172,6 +181,7 @@ class Store:
                     now,
                     now,
                     "Awaiting worker",
+                    json.dumps(plan or {}),
                 ),
             )
             return self._session(db, owner, scan_id)
@@ -247,3 +257,77 @@ class Store:
         with self.transaction() as db:
             for table in ("challenges", "grants", "scans"):
                 db.execute(f"DELETE FROM {table} WHERE owner=?", (owner,))
+
+    def plan(self, owner, scan_id):
+        with self.transaction() as db:
+            self._session(db, owner, scan_id)
+            return json.loads(
+                db.execute("SELECT plan FROM scans WHERE id=?", (scan_id,)).fetchone()[0]
+            )
+
+    def save_outcome(self, owner, scan_id, outcome):
+        from racs.models import CheckOutcome
+
+        checked = CheckOutcome.model_validate(outcome)
+        with self.transaction() as db:
+            self._expire(db)
+            if self._session(db, owner, scan_id)["status"] != "running":
+                raise PolicyError("Cannot store results for an inactive scan")
+            db.execute(
+                "INSERT OR REPLACE INTO outcomes VALUES(?,?,?)",
+                (scan_id, checked.check, checked.model_dump_json()),
+            )
+
+    def report(self, owner, scan_id):
+        with self.transaction() as db:
+            self._expire(db)
+            session = self._session(db, owner, scan_id)
+            outcomes = [
+                json.loads(row[0])
+                for row in db.execute(
+                    "SELECT payload FROM outcomes WHERE scan_id=? ORDER BY check_name", (scan_id,)
+                )
+            ]
+            return {
+                "session": session,
+                "outcomes": outcomes,
+                "findings": [f for o in outcomes for f in o["findings"]],
+            }
+
+    def history(self, owner):
+        with self.transaction() as db:
+            self._expire(db)
+            ids = [
+                row[0]
+                for row in db.execute(
+                    "SELECT id FROM scans WHERE owner=? ORDER BY created_at DESC LIMIT 50", (owner,)
+                )
+            ]
+            return [self._session(db, owner, scan_id) for scan_id in ids]
+
+    def distress(self, origin, reason=None):
+        with self.transaction() as db:
+            if reason:
+                db.execute(
+                    "INSERT OR REPLACE INTO distress VALUES(?,?,?)", (origin, reason, self.clock())
+                )
+            row = db.execute("SELECT reason FROM distress WHERE origin=?", (origin,)).fetchone()
+            return row[0] if row else None
+
+    def clear_distress(self, owner, scope):
+        with self.transaction() as db:
+            if not db.execute(
+                "SELECT 1 FROM grants WHERE owner=? AND origin=? AND expires>?",
+                (owner, scope.origin, self.clock()),
+            ).fetchone():
+                raise PolicyError("Verify ownership before acknowledging target recovery")
+            db.execute("DELETE FROM distress WHERE origin=?", (scope.origin,))
+
+    def inactive_ids(self, ids):
+        with self.transaction() as db:
+            self._expire(db)
+            active = {
+                r[0]
+                for r in db.execute("SELECT id FROM scans WHERE status IN ('queued','running')")
+            }
+            return [key for key in ids if key not in active]

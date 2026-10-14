@@ -30,17 +30,23 @@ def public_ip(value: str) -> str:
 @dataclass(frozen=True)
 class Scope:
     host: str
+    port: int = 443
 
     @property
     def origin(self) -> str:
-        return f"https://{self.host}"
+        return f"https://{self.host}" + (f":{self.port}" if self.port != 443 else "")
 
     @classmethod
-    def parse(cls, value: str) -> "Scope":
+    def parse(cls, value: str, *, allow_lab=False) -> "Scope":
         if not isinstance(value, str) or not value or len(value) > 2048:
             raise PolicyError("Supply an HTTPS hostname")
         if any(ord(c) <= 32 or ord(c) >= 127 for c in value) or "\\" in value:
             raise PolicyError("Use an ASCII hostname (IDNA form for international names)")
+        if allow_lab and value in (
+            "https://racs-lab.localhost:9443",
+            "https://racs-lab.localhost:9443/",
+        ):
+            return cls("racs-lab.localhost", 9443)
         url = urlsplit(value if "://" in value else f"https://{value}")
         try:
             port = url.port
@@ -70,3 +76,27 @@ class Scope:
         ):
             raise PolicyError("Special-use hostnames are disabled")
         return cls(host)
+
+
+def validate_path(path: str) -> str:
+    # Exact, canonical owner-declared paths only. No crawling or URL joining.
+    if not re.fullmatch(r"/(?:[a-zA-Z0-9_~.-]+/?)*", path) or len(path) > 512:
+        raise PolicyError("Use a canonical absolute path without escapes, queries or fragments")
+    parts = path.lower().split("/")
+    if any(p in (".", "..") for p in parts) or "//" in path:
+        raise PolicyError("Ambiguous path")
+    if any(
+        word in path.lower()
+        for word in (
+            "logout",
+            "delete",
+            "remove",
+            "purchase",
+            "checkout",
+            "transfer",
+            "reset",
+            "unsubscribe",
+        )
+    ):
+        raise PolicyError("Potentially state-changing route is excluded")
+    return path

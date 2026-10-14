@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from racs.models import Finding
+from racs.models import CheckOutcome
 from racs.network import Response
 
 
@@ -16,14 +16,11 @@ class Metadata:
 
 class RequestContext(Protocol):
     async def get_root(self) -> Response: ...
+    async def get(self, path: str, params=None, principal=None) -> Response: ...
     def check_cancelled(self) -> None: ...
 
 
 class Check(Protocol):
     metadata: Metadata
 
-    async def run(self, context: RequestContext) -> list[Finding]: ...
-
-
-# Step 1 has no scanning modules. Future modules register explicitly here.
-CHECKS: tuple[Check, ...] = ()
+    async def run(self, context: RequestContext) -> CheckOutcome: ...
