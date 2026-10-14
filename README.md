@@ -1,4 +1,24 @@
-# RACS - Rudy Advanced Cybersecurity Scanner
+<p align="center"><img src="docs/banner.svg" alt="RUDY / RACS — Prove control. Define scope. Review the evidence." width="100%"></p>
+
+<p align="center">
+  <a href="https://github.com/r4venrudy/RACS/actions/workflows/tests.yml"><img src="https://github.com/r4venrudy/RACS/actions/workflows/tests.yml/badge.svg" alt="Tests and practice validation"></a>
+  <img src="https://img.shields.io/badge/runtime-Python_3.12%2B-55e0b6?style=flat-square&labelColor=101820" alt="Python 3.12 or newer">
+  <img src="https://img.shields.io/badge/API-FastAPI-55e0b6?style=flat-square&labelColor=101820" alt="FastAPI">
+  <img src="https://img.shields.io/badge/status-local_preview-55e0b6?style=flat-square&labelColor=101820" alt="Local preview">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-55e0b6?style=flat-square&labelColor=101820" alt="MIT license"></a>
+</p>
+
+<p align="center"><strong>Rudy Advanced Cybersecurity Scanner</strong><br>Prove control. Define scope. Review the evidence.</p>
+
+<p align="center">
+  <a href="#evidence-before-findings">Web checks</a> ·
+  <a href="#run-locally">Quick start</a> ·
+  <a href="#test-and-practice">Validation</a> ·
+  <a href="#architecture-and-api">Architecture</a> ·
+  <a href="https://rudy.systems">Rudy Systems</a>
+</p>
+
+---
 
 **Authorized use only. Test only systems you own or are explicitly authorized to
 assess. Proof of control is mandatory and does not replace legal permission.
@@ -11,7 +31,7 @@ Cloud categories are visible as coming soon.
 ## Evidence before findings
 
 | Check | Confirmation rule | Meaning of a positive |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | Security headers | Missing on two successful HTML responses; respects CSP framing alternatives | High-confidence configuration observation, not proof of exploitation |
 | Reflected XSS | Two fresh harmless markers execute in isolated, dependency-free captured HTML with the original enforcing CSP preserved | High-confidence execution in the tested reflected HTML context |
 | SQL injection indicators | Stable nonempty JSON result array, benign invalid control, two true/false AND predicate pairs, repeated untouched baselines | High-confidence boolean differential; SQL as the root cause still needs code review |
@@ -96,3 +116,7 @@ are separate modules under `src/racs/checks`.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+<p align="center">Built by <a href="https://rudy.systems">Rudy Systems</a> · <a href="https://github.com/r4venrudy">r4venrudy</a></p>

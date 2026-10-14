@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+  <title id="title">RUDY / RACS</title>
+  <desc id="desc">Prove control. Define scope. Review the evidence. Rudy Advanced Cybersecurity Scanner.</desc>
+  <rect width="1280" height="360" rx="18" fill="#0a1118"/>
+  <path d="M0 0h7v360H0" fill="#55e0b6"/>
+  <path d="M64 257H1216" stroke="#24333d"/>
+  <g fill="none" stroke="#142333">
+    <path d="M900 0V238M960 0V238M1020 0V238M1080 0V238M1140 0V238M1200 0V238M880 44H1280M880 104H1280M880 164H1280M880 224H1280"/>
+  </g>
+  <text x="64" y="48" fill="#55e0b6" font-family="Consolas,monospace" font-size="14" letter-spacing="4">RUDY SYSTEMS / SECURITY TOOLS</text>
+  <text x="60" y="150" fill="#edf4f7" font-family="Arial,Helvetica,sans-serif" font-size="68" font-weight="700">RUDY <tspan fill="#55e0b6">/ RACS</tspan></text>
+  <text x="64" y="206" fill="#b7c6ce" font-family="Arial,Helvetica,sans-serif" font-size="25">Prove control. Define scope. Review the evidence.</text>
+  <g fill="#101820" stroke="#24333d" stroke-width="1.5">
+    <rect x="940" y="54" width="252" height="42" rx="5"/>
+    <rect x="940" y="119" width="252" height="42" rx="5"/>
+    <rect x="940" y="184" width="252" height="42" rx="5"/>
+  </g>
+  <g fill="#55e0b6" font-family="Consolas,monospace" font-size="13" text-anchor="middle" letter-spacing="1">
+    <text x="1066" y="80">VERIFIED ORIGIN</text>
+    <text x="1066" y="145">BOUNDED WEB CHECKS</text>
+    <text x="1066" y="210">REVIEWABLE EVIDENCE</text>
+  </g>
+  <g fill="none" stroke="#55e0b6" stroke-width="1.5">
+    <path d="M1066 97V116m-4-5 4 5 4-5M1066 162V181m-4-5 4 5 4-5"/>
+  </g>
+  <text x="64" y="301" fill="#55e0b6" font-family="Consolas,monospace" font-size="15" letter-spacing="2">PYTHON / FASTAPI / SQLITE / HTML + PDF</text>
+  <text x="1216" y="301" text-anchor="end" fill="#b7c6ce" font-family="Consolas,monospace" font-size="12" letter-spacing="1">v0.2.0 / LOCAL PREVIEW</text>
+</svg>
