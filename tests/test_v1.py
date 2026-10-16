@@ -221,3 +221,9 @@ async def test_hsts_max_age_zero_counts_as_absent():
     assert "headers.strict-transport-security" in {f.type for f in disabled.findings}
     enabled = await CHECKS["headers"].run(header_ctx({"strict-transport-security": "max-age=600"}))
     assert "headers.strict-transport-security" not in {f.type for f in enabled.findings}
+
+
+def test_scrub_basic_auth_and_cookie_values():
+    text = "Authorization: Basic YWxpY2U6c2VjcmV0\nCookie: session=abc123; theme=dark"
+    assert scrub(text) == "Authorization: Basic [redacted]\nCookie: session=[redacted]; theme=[redacted]"
+    assert scrub("Set-Cookie: sid=xyz; Path=/; HttpOnly") == "Set-Cookie: sid=[redacted]; Path=/; HttpOnly"
