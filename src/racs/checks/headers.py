@@ -55,8 +55,10 @@ class Headers:
 
         def framed(r):
             csp = r.headers.get("content-security-policy", "").lower()
-            return r.headers.get("x-frame-options", "").lower() in ("deny", "sameorigin") or bool(
-                re.search(r"(?:^|[;,])\s*frame-ancestors\s+", csp)
+            # "frame-ancestors *" allows every embedder, so it is not a framing restriction
+            ancestors = re.findall(r"(?:^|[;,])\s*frame-ancestors\s+([^;,]*)", csp)
+            return r.headers.get("x-frame-options", "").strip().lower() in ("deny", "sameorigin") or any(
+                "*" not in sources.split() for sources in ancestors
             )
 
         if not framed(first) and not framed(second):

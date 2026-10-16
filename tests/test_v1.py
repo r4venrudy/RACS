@@ -198,3 +198,19 @@ async def test_aggregate_interval(tmp_path, monkeypatch):
     policy = TrafficPolicy(store, net, interval=0.05)
     await asyncio.gather(*(policy.root("alice", j["id"]) for j in jobs))
     assert times[1] - times[0] >= 0.045
+
+
+def header_ctx(headers):
+    response = Response(200, b"<html></html>", {"content-type": "text/html"} | headers)
+    return SimpleNamespace(
+        origin="https://example.com", plan=ScanPlan(), get_root=AsyncMock(return_value=response)
+    )
+
+
+async def test_framing_value_whitespace_and_wildcard_ancestors():
+    padded = await CHECKS["headers"].run(header_ctx({"x-frame-options": " DENY "}))
+    assert "headers.framing" not in {f.type for f in padded.findings}
+    wildcard = await CHECKS["headers"].run(
+        header_ctx({"content-security-policy": "default-src 'self'; frame-ancestors *"})
+    )
+    assert "headers.framing" in {f.type for f in wildcard.findings}
