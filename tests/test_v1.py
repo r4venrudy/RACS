@@ -243,3 +243,10 @@ def test_cli_version(capsys):
         main(["--version"])
     assert exit_info.value.code == 0
     assert capsys.readouterr().out.startswith("RACS 0.")
+
+
+def test_reports_list_findings_most_severe_first():
+    from racs.reporting import by_severity
+
+    rows = [{"severity": s, "id": s} for s in ("low", "critical", "medium", "high", "low")]
+    assert [r["severity"] for r in by_severity(rows)] == ["critical", "high", "medium", "low", "low"]

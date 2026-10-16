@@ -8,6 +8,13 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, Preformatted, SimpleDocTemplate, Spacer
 
+SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+
+def by_severity(findings):
+    """Most severe first so a reader starts with what matters; stable within one severity."""
+    return sorted(findings, key=lambda f: SEVERITY_ORDER.get(f["severity"], len(SEVERITY_ORDER)))
+
 
 def html_report(report):
     s = report["session"]
@@ -34,7 +41,7 @@ def html_report(report):
             parts.append(
                 f"<p><b>{name}: not performed</b> — Not selected or interrupted before this check.</p>"
             )
-    for f in report["findings"]:
+    for f in by_severity(report["findings"]):
         parts.append(
             f"<article><h2>{e(f['type'])}</h2><p class='badge'>{e(f['severity'])} severity · {e(f['confidence'])} confidence · {e(f['verification_status'])}</p><p>{e(f['affected_url'])} · parameter: {e(f['affected_parameter'] or 'none')}</p>"
         )
@@ -94,7 +101,7 @@ def pdf_report(report):
     for name in ("headers", "xss", "sqli", "idor"):
         if name not in seen:
             para(name + ": not performed (not selected or interrupted).")
-    for f in report["findings"]:
+    for f in by_severity(report["findings"]):
         para(f["type"], "Heading1")
         para(
             f"{f['severity']} severity | {f['confidence']} confidence | {f['verification_status']}"
