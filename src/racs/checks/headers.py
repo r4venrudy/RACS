@@ -32,13 +32,21 @@ class Headers:
                 "response.headers['X-Content-Type-Options'] = 'nosniff'",
             ),
             "strict-transport-security": (
-                "HSTS absent",
+                "HSTS absent or disabled (max-age=0)",
                 "After confirming HTTPS for the whole host, enable HSTS. Do not preload blindly.",
                 "response.headers['Strict-Transport-Security'] = 'max-age=31536000'",
             ),
         }
+        def effective(r, name):
+            value = r.headers.get(name, "")
+            if name == "strict-transport-security":
+                # max-age=0 tells browsers to forget the policy, so it is the same as no header
+                age = re.search(r"(?:^|;)\s*max-age\s*=\s*\"?(\d+)", value, re.I)
+                return bool(age and int(age.group(1)) > 0)
+            return bool(value)
+
         for name, (title, advice, fix) in policies.items():
-            if all(not r.headers.get(name) for r in (first, second)):
+            if all(not effective(r, name) for r in (first, second)):
                 findings.append(
                     finding(
                         "headers." + name,

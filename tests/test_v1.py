@@ -214,3 +214,10 @@ async def test_framing_value_whitespace_and_wildcard_ancestors():
         header_ctx({"content-security-policy": "default-src 'self'; frame-ancestors *"})
     )
     assert "headers.framing" in {f.type for f in wildcard.findings}
+
+
+async def test_hsts_max_age_zero_counts_as_absent():
+    disabled = await CHECKS["headers"].run(header_ctx({"strict-transport-security": "max-age=0"}))
+    assert "headers.strict-transport-security" in {f.type for f in disabled.findings}
+    enabled = await CHECKS["headers"].run(header_ctx({"strict-transport-security": "max-age=600"}))
+    assert "headers.strict-transport-security" not in {f.type for f in enabled.findings}
