@@ -65,7 +65,12 @@ class Headers:
             csp = r.headers.get("content-security-policy", "").lower()
             # "frame-ancestors *" allows every embedder, so it is not a framing restriction
             ancestors = re.findall(r"(?:^|[;,])\s*frame-ancestors\s+([^;,]*)", csp)
-            return r.headers.get("x-frame-options", "").strip().lower() in ("deny", "sameorigin") or any(
+            # repeated headers arrive joined with ", "; per the HTML standard, one distinct value must
+            # be deny/sameorigin, and conflicting values that include a known one block framing
+            xfo = {v.strip().lower() for v in r.headers.get("x-frame-options", "").split(",")}
+            known = xfo & {"deny", "sameorigin", "allowall"}
+            blocked = xfo <= {"deny", "sameorigin"} if len(xfo) == 1 else bool(known)
+            return blocked or any(
                 "*" not in sources.split() for sources in ancestors
             )
 

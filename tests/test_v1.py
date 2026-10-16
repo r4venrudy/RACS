@@ -210,6 +210,12 @@ def header_ctx(headers):
 async def test_framing_value_whitespace_and_wildcard_ancestors():
     padded = await CHECKS["headers"].run(header_ctx({"x-frame-options": " DENY "}))
     assert "headers.framing" not in {f.type for f in padded.findings}
+    repeated = await CHECKS["headers"].run(header_ctx({"x-frame-options": "DENY, DENY"}))
+    assert "headers.framing" not in {f.type for f in repeated.findings}
+    conflicting = await CHECKS["headers"].run(header_ctx({"x-frame-options": "DENY, SAMEORIGIN"}))
+    assert "headers.framing" not in {f.type for f in conflicting.findings}
+    obsolete = await CHECKS["headers"].run(header_ctx({"x-frame-options": "ALLOW-FROM https://a.example"}))
+    assert "headers.framing" in {f.type for f in obsolete.findings}
     wildcard = await CHECKS["headers"].run(
         header_ctx({"content-security-policy": "default-src 'self'; frame-ancestors *"})
     )
