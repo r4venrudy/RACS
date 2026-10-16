@@ -230,6 +230,12 @@ async def test_hsts_max_age_zero_counts_as_absent():
     assert "headers.strict-transport-security" not in {f.type for f in enabled.findings}
 
 
+async def test_nosniff_value_must_be_exact():
+    for value, flagged in (("nosniff", False), ("NoSniff, nosniff", False), ("nosnif", True), ("none", True)):
+        result = await CHECKS["headers"].run(header_ctx({"x-content-type-options": value}))
+        assert ("headers.x-content-type-options" in {f.type for f in result.findings}) is flagged
+
+
 def test_scrub_basic_auth_and_cookie_values():
     text = "Authorization: Basic YWxpY2U6c2VjcmV0\nCookie: session=abc123; theme=dark"
     assert scrub(text) == "Authorization: Basic [redacted]\nCookie: session=[redacted]; theme=[redacted]"

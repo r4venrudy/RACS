@@ -27,7 +27,7 @@ class Headers:
                 "response.headers['Content-Security-Policy'] = \"default-src 'self'; object-src 'none'; base-uri 'self'\"",
             ),
             "x-content-type-options": (
-                "MIME sniffing protection absent",
+                "MIME sniffing protection absent or invalid",
                 "Send the correct Content-Type and nosniff.",
                 "response.headers['X-Content-Type-Options'] = 'nosniff'",
             ),
@@ -43,6 +43,9 @@ class Headers:
                 # max-age=0 tells browsers to forget the policy, so it is the same as no header
                 age = re.search(r"(?:^|;)\s*max-age\s*=\s*\"?(\d+)", value, re.I)
                 return bool(age and int(age.group(1)) > 0)
+            if name == "x-content-type-options":
+                # Fetch spec: browsers honor the header only when its first value is "nosniff"
+                return value.split(",")[0].strip().lower() == "nosniff"
             return bool(value)
 
         for name, (title, advice, fix) in policies.items():
