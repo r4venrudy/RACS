@@ -153,6 +153,7 @@ def test_reports_escape_untrusted_data_and_redact():
     }
     html = html_report(report)
     assert "<script>alert(1)</script>" not in html and "&lt;script&gt;" in html
+    assert "content=\"default-src 'none'; style-src 'unsafe-inline'" in html
     pdf = pdf_report(report)
     assert "Sample fix" in "".join(page.extract_text() for page in PdfReader(BytesIO(pdf)).pages)
     assert scrub({"evidence": "Bearer abc123 racs-v1=proof anotherSecret"}, ["anotherSecret"]) == {

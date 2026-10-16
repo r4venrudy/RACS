@@ -17,6 +17,9 @@ def html_report(report):
 
     parts = [
         f"<!doctype html><html lang='en'><meta charset='utf-8'><title>RACS report {e(s['id'])}</title>",
+        # the report quotes text from the target; even escaped, it should not be able to run or load anything
+        "<meta http-equiv='Content-Security-Policy' content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">",
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>",
         "<style>body{font:16px/1.6 system-ui;max-width:1000px;margin:48px auto;padding:0 24px;color:#14222c}h1{font-size:36px}article{border-top:2px solid #ccd6db;margin:36px 0;padding-top:16px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#eef2f4;padding:20px}small{color:#536470}.badge{font-weight:700}h2{margin-bottom:8px}</style>",
         "<h1>RACS security report</h1><p>Authorized testing only. Findings describe the tested scope, not a guarantee of security.</p>",
         f"<p><b>Target:</b> {e(s['origin'])}<br><b>Session:</b> {e(s['id'])}<br><b>Status:</b> {e(s['status'])}<br>{e(s['detail'])}</p>",
