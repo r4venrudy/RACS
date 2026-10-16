@@ -227,3 +227,12 @@ def test_scrub_basic_auth_and_cookie_values():
     text = "Authorization: Basic YWxpY2U6c2VjcmV0\nCookie: session=abc123; theme=dark"
     assert scrub(text) == "Authorization: Basic [redacted]\nCookie: session=[redacted]; theme=[redacted]"
     assert scrub("Set-Cookie: sid=xyz; Path=/; HttpOnly") == "Set-Cookie: sid=[redacted]; Path=/; HttpOnly"
+
+
+def test_cli_version(capsys):
+    from racs.cli import main
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(["--version"])
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.startswith("RACS 0.")

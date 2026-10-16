@@ -4,6 +4,7 @@ import argparse
 import os
 import secrets
 from contextlib import contextmanager
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import uvicorn
@@ -32,8 +33,16 @@ def instance_lock(path):
         yield
 
 
-def main():
+def installed_version():
+    try:
+        return version("racs")
+    except PackageNotFoundError:
+        return "unknown (not installed)"
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Start RACS on loopback only")
+    parser.add_argument("--version", action="version", version=f"RACS {installed_version()}")
     parser.add_argument("--port", type=int, default=8765)
     default_root = Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local" / "share")) / "RACS"
     parser.add_argument("--data-dir", type=Path, default=default_root)
@@ -42,7 +51,7 @@ def main():
         type=Path,
         help="Explicitly permit ONLY racs-lab.localhost:9443 pinned to loopback and this CA, with normal ownership proof",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not 1024 <= args.port <= 65535:
         parser.error("port must be between 1024 and 65535")
     args.data_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
